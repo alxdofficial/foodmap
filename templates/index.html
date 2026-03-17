@@ -6,21 +6,31 @@
     <title>Flavor Map of the World</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div id="map-container">
-        <div id="map"></div>
+    <div id="globe-container"></div>
+
+    <!-- UI Overlay -->
+    <div id="ui-overlay">
+        <div id="search-bar">
+            <input type="text" id="search-input" placeholder="Search regions or ingredients..." autocomplete="off">
+            <div id="search-results" class="hidden"></div>
+        </div>
+        <button id="randomizer-btn">🎲 What should we cook?</button>
     </div>
+
+    <!-- Tooltip panel (right side, click-to-lock) -->
     <div id="tooltip" class="hidden">
-        <div id="tooltip-header"></div>
+        <div id="tooltip-header">
+            <button id="tooltip-close">✕</button>
+        </div>
         <div id="tooltip-body"></div>
     </div>
-    <div id="marker-overlay"></div>
+
     <div id="scanlines"></div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
     <script src="{{ url_for('static', filename='js/sprites.js') }}"></script>
     <script src="{{ url_for('static', filename='js/data.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
