@@ -201,23 +201,10 @@
     worldCopyJump: false,
   });
 
-  L.tileLayer("https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg", {
-    maxZoom: 16,
-    noWrap: true,
-  }).addTo(map);
-
-  // Borders & labels overlay (Stamen Toner lines + labels)
-  L.tileLayer("https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}{r}.png", {
+  // CartoDB Voyager - pastel colored countries with labels (free, no auth)
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    subdomains: "abcd",
     maxZoom: 19,
-    pane: "overlayPane",
-    opacity: 0.3,
-    noWrap: true,
-  }).addTo(map);
-
-  L.tileLayer("https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}{r}.png", {
-    maxZoom: 19,
-    pane: "overlayPane",
-    opacity: 0.35,
     noWrap: true,
   }).addTo(map);
 

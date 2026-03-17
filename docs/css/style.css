@@ -84,7 +84,7 @@ body {
 
 /* Leaflet tile styling for pastel retro look */
 .leaflet-tile-pane {
-    filter: saturate(0.5) brightness(1.0) contrast(0.9) sepia(0.1);
+    filter: saturate(0.6) brightness(1.02) contrast(0.9) sepia(0.08);
 }
 
 .leaflet-container {
