@@ -69,17 +69,12 @@
     return url;
   }
 
-  // ---- Size config ----
-  var SIZE_CONFIG = {
-    small:  { iconPx: 20, gap: 1 },
-    medium: { iconPx: 24, gap: 2 },
-    large:  { iconPx: 28, gap: 2 },
-  };
-
   function getIngredientName(id) {
     var data = window.SPRITE_DATA[id];
     if (data && data.name) return data.name;
-    return id.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    return id.replace(/_/g, " ").replace(/\b\w/g, function (c) {
+      return c.toUpperCase();
+    });
   }
 
   // ===========================================================
@@ -88,129 +83,159 @@
   var foodData = window.FOOD_MAP_DATA;
   var activeRegion = null;
 
-  var globe = Globe()(document.getElementById("globe-container"))
-    .globeImageUrl("//unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
-    .bumpImageUrl("//unpkg.com/three-globe/example/img/earth-topology.png")
-    .backgroundColor("#0f0f23")
-    .showAtmosphere(true)
-    .atmosphereColor("#4a3f6b")
-    .atmosphereAltitude(0.25)
-    .width(window.innerWidth)
-    .height(window.innerHeight)
-    .pointOfView({ lat: 25, lng: 40, altitude: 2.5 });
+  var globe = null;
+  var mapContainer = document.getElementById("globe-container");
+  var mapMessage = document.getElementById("map-message");
+  var caption = document.getElementById("map-caption");
+  var status = document.getElementById("atlas-status");
+  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  var lastControl = null;
+
+  try {
+    if (typeof Globe !== "function")
+      throw new Error("Map renderer unavailable");
+    globe = Globe()(mapContainer)
+      .globeImageUrl(
+        "https://cdn.jsdelivr.net/npm/three-globe@2.44.0/example/img/earth-blue-marble.jpg",
+      )
+      .bumpImageUrl(
+        "https://cdn.jsdelivr.net/npm/three-globe@2.44.0/example/img/earth-topology.png",
+      )
+      .backgroundColor("#ecebdc")
+      .showAtmosphere(true)
+      .atmosphereColor("#b1b99a")
+      .atmosphereAltitude(0.13)
+      .width(mapContainer.clientWidth)
+      .height(mapContainer.clientHeight)
+      .pointOfView({ lat: 25, lng: 40, altitude: 2.3 });
+    globe.controls().enablePan = false;
+    mapMessage.classList.add("hidden");
+  } catch (error) {
+    mapMessage.textContent =
+      "The globe could not load. You can still explore every cuisine using search or the region list.";
+  }
+
+  function flyTo(position, duration) {
+    if (globe)
+      globe.pointOfView(position, reducedMotion.matches ? 0 : duration);
+  }
+
+  function announce(message) {
+    status.textContent = message;
+  }
 
   // ===========================================================
   // C) HTML markers layer
   // ===========================================================
   function buildRegionElement(region) {
-    var cfg = SIZE_CONFIG[region.size] || SIZE_CONFIG.medium;
-    var iconPx = cfg.iconPx;
-    var gap = cfg.gap;
-
-    var el = document.createElement("div");
+    var el = document.createElement("button");
+    el.type = "button";
     el.className = "region-overlay";
-
-    var container = document.createElement("div");
+    el.setAttribute(
+      "aria-label",
+      "Explore " + region.name + ", " + region.country,
+    );
+    var container = document.createElement("span");
     container.className = "region-marker-container";
-
-    region.flavorBases.forEach(function (base) {
-      var rowDiv = document.createElement("div");
-      rowDiv.className = "flavor-row";
-      rowDiv.style.gap = gap + "px";
-
-      base.ingredients.forEach(function (id) {
-        var img = document.createElement("img");
-        img.className = "sprite-icon";
-        img.src = renderSprite(id, iconPx);
-        img.width = iconPx;
-        img.height = iconPx;
-        img.title = getIngredientName(id);
-        rowDiv.appendChild(img);
-      });
-
-      container.appendChild(rowDiv);
-    });
-
-    var label = document.createElement("div");
+    var ingredient = region.flavorBases[0].ingredients[0];
+    var img = document.createElement("img");
+    img.className = "sprite-icon";
+    img.src = renderSprite(ingredient, 28);
+    img.width = 24;
+    img.height = 24;
+    img.alt = "";
+    container.appendChild(img);
+    var label = document.createElement("span");
     label.className = "region-label";
     label.textContent = region.name;
-    container.appendChild(label);
-
     el.appendChild(container);
-
-    // Click to pin tooltip
-    el.addEventListener("click", function (e) {
-      e.stopPropagation();
+    el.appendChild(label);
+    el.addEventListener("click", function (event) {
+      event.stopPropagation();
+      lastControl = el;
       openRegion(region);
     });
-
-    // Mouseenter: brief name preview on desktop
-    var preview = null;
-    el.addEventListener("mouseenter", function () {
-      if (activeRegion && activeRegion.id === region.id) return;
-      preview = document.createElement("div");
-      preview.className = "region-preview";
-      preview.textContent = region.name + " — " + region.country;
-      el.appendChild(preview);
-    });
-    el.addEventListener("mouseleave", function () {
-      if (preview && preview.parentNode) {
-        preview.parentNode.removeChild(preview);
-      }
-      preview = null;
-    });
-
     return el;
   }
 
-  globe
-    .htmlElementsData(foodData.regions)
-    .htmlLat(function (d) { return d.center[0]; })
-    .htmlLng(function (d) { return d.center[1]; })
-    .htmlElement(function (d) { return buildRegionElement(d); })
-    .htmlAltitude(0.01);
+  if (globe) {
+    globe
+      .htmlElementsData(foodData.regions)
+      .htmlLat(function (d) {
+        return d.center[0];
+      })
+      .htmlLng(function (d) {
+        return d.center[1];
+      })
+      .htmlElement(function (d) {
+        return buildRegionElement(d);
+      })
+      .htmlAltitude(0.01);
+  }
 
   // ===========================================================
   // D) Click-to-lock tooltip system (fixed right panel)
   // ===========================================================
   var tooltipEl = document.getElementById("tooltip");
 
-  function showTooltip(region) {
+  function showTooltip(region, chosenRecipe) {
     var header = document.getElementById("tooltip-header");
     var body = document.getElementById("tooltip-body");
 
     header.innerHTML =
       '<div class="tooltip-header-row">' +
-        '<div>' +
-          '<div class="region-name">' + region.name + "</div>" +
-          '<div class="region-country">' + region.country + "</div>" +
-        "</div>" +
-        '<button class="tooltip-close" id="tooltip-close">&times;</button>' +
+      "<div>" +
+      '<h2 class="region-name" id="region-title" tabindex="-1">' +
+      region.name +
+      "</h2>" +
+      '<div class="region-country">' +
+      region.country +
+      "</div>" +
+      "</div>" +
+      '<button class="tooltip-close" id="tooltip-close" type="button" aria-label="Close regional flavors">&times;</button>' +
       "</div>";
 
-    var bodyHtml = "";
+    var bodyHtml = chosenRecipe
+      ? '<p class="random-pick">A little inspiration for dinner: ' +
+        chosenRecipe.name +
+        "</p>"
+      : "";
     region.flavorBases.forEach(function (base) {
       bodyHtml += '<div class="tooltip-flavor-base">';
-      bodyHtml += '<div class="flavor-base-name">' + base.name + "</div>";
-      bodyHtml += '<div class="flavor-base-desc">' + base.description + "</div>";
+      bodyHtml += '<h3 class="flavor-base-name">' + base.name + "</h3>";
+      bodyHtml +=
+        '<div class="flavor-base-desc">' + base.description + "</div>";
 
       bodyHtml += '<div class="flavor-base-ingredients">';
       base.ingredients.forEach(function (id) {
         var src = renderSprite(id, 16);
         bodyHtml +=
           '<div class="ingredient-tag">' +
-          '<img class="sprite-icon" src="' + src + '" width="16" height="16">' +
-          "<span>" + getIngredientName(id) + "</span>" +
+          '<img class="sprite-icon" src="' +
+          src +
+          '" width="22" height="22" alt="">' +
+          "<span>" +
+          getIngredientName(id) +
+          "</span>" +
           "</div>";
       });
       bodyHtml += "</div>";
 
-      bodyHtml += '<ul class="recipe-list">';
+      bodyHtml +=
+        '<p class="recipe-heading">Dishes to try</p><ul class="recipe-list">';
       base.recipes.forEach(function (recipe) {
         bodyHtml +=
-          '<li class="recipe-item">' +
-          '<div class="recipe-name">' + recipe.name + "</div>" +
-          '<div class="recipe-desc">' + recipe.description + "</div>" +
+          '<li class="recipe-item' +
+          (chosenRecipe && chosenRecipe.name === recipe.name
+            ? " recipe-highlight"
+            : "") +
+          '">' +
+          '<div class="recipe-name">' +
+          recipe.name +
+          "</div>" +
+          '<div class="recipe-desc">' +
+          recipe.description +
+          "</div>" +
           "</li>";
       });
       bodyHtml += "</ul>";
@@ -218,21 +243,32 @@
     });
 
     body.innerHTML = bodyHtml;
+    body.scrollTop = 0;
 
     // Show panel (CSS handles positioning)
     tooltipEl.classList.remove("hidden");
+    tooltipEl.inert = false;
+    tooltipEl.setAttribute("aria-hidden", "false");
+    tooltipEl.setAttribute("aria-labelledby", "region-title");
+    document.getElementById("region-title").focus({ preventScroll: true });
 
     // Wire close button
-    document.getElementById("tooltip-close").addEventListener("click", function (e) {
-      e.stopPropagation();
-      dismissTooltip();
-    });
+    document
+      .getElementById("tooltip-close")
+      .addEventListener("click", function (e) {
+        e.stopPropagation();
+        dismissTooltip();
+      });
   }
 
   function dismissTooltip() {
     tooltipEl.classList.add("hidden");
+    tooltipEl.inert = true;
+    tooltipEl.setAttribute("aria-hidden", "true");
     activeRegion = null;
-    globe.arcsData([]);
+    if (globe) globe.arcsData([]);
+    if (lastControl && document.contains(lastControl))
+      lastControl.focus({ preventScroll: true });
   }
 
   // ===========================================================
@@ -253,27 +289,27 @@
   });
 
   var ARC_COLORS = {
-    dried_chili:      ["rgba(192,57,43,0.8)", "rgba(231,76,60,0.8)"],
-    chili:            ["rgba(192,57,43,0.8)", "rgba(231,76,60,0.8)"],
-    sichuan_pepper:   ["rgba(192,57,43,0.7)", "rgba(255,138,128,0.7)"],
-    coconut:          ["rgba(255,255,255,0.8)", "rgba(236,240,241,0.8)"],
-    coconut_milk:     ["rgba(255,255,255,0.8)", "rgba(236,240,241,0.8)"],
-    cumin:            ["rgba(243,156,18,0.8)", "rgba(241,196,15,0.8)"],
-    garlic:           ["rgba(178,223,138,0.8)", "rgba(166,206,57,0.8)"],
-    ginger:           ["rgba(241,196,15,0.8)", "rgba(255,245,157,0.8)"],
-    turmeric:         ["rgba(241,196,15,0.8)", "rgba(255,235,59,0.8)"],
-    coriander:        ["rgba(46,204,113,0.7)", "rgba(165,214,167,0.7)"],
-    lemongrass:       ["rgba(165,214,167,0.8)", "rgba(200,230,201,0.8)"],
-    soy_sauce:        ["rgba(93,64,55,0.8)", "rgba(121,85,72,0.8)"],
-    fish_sauce:       ["rgba(210,180,140,0.8)", "rgba(245,222,179,0.8)"],
-    black_pepper:     ["rgba(85,85,85,0.8)", "rgba(153,153,153,0.8)"],
-    cinnamon:         ["rgba(205,133,63,0.8)", "rgba(210,180,140,0.8)"],
-    tomato:           ["rgba(192,57,43,0.8)", "rgba(255,99,71,0.8)"],
-    onion:            ["rgba(243,156,18,0.7)", "rgba(255,235,59,0.7)"],
-    olive_oil:        ["rgba(165,214,167,0.8)", "rgba(200,230,201,0.8)"],
-    lime:             ["rgba(46,204,113,0.8)", "rgba(129,199,132,0.8)"],
-    basil:            ["rgba(39,174,96,0.8)", "rgba(46,204,113,0.8)"],
-    paprika:          ["rgba(230,126,34,0.8)", "rgba(243,156,18,0.8)"],
+    dried_chili: ["rgba(192,57,43,0.8)", "rgba(231,76,60,0.8)"],
+    chili: ["rgba(192,57,43,0.8)", "rgba(231,76,60,0.8)"],
+    sichuan_pepper: ["rgba(192,57,43,0.7)", "rgba(255,138,128,0.7)"],
+    coconut: ["rgba(255,255,255,0.8)", "rgba(236,240,241,0.8)"],
+    coconut_milk: ["rgba(255,255,255,0.8)", "rgba(236,240,241,0.8)"],
+    cumin: ["rgba(243,156,18,0.8)", "rgba(241,196,15,0.8)"],
+    garlic: ["rgba(178,223,138,0.8)", "rgba(166,206,57,0.8)"],
+    ginger: ["rgba(241,196,15,0.8)", "rgba(255,245,157,0.8)"],
+    turmeric: ["rgba(241,196,15,0.8)", "rgba(255,235,59,0.8)"],
+    coriander: ["rgba(46,204,113,0.7)", "rgba(165,214,167,0.7)"],
+    lemongrass: ["rgba(165,214,167,0.8)", "rgba(200,230,201,0.8)"],
+    soy_sauce: ["rgba(93,64,55,0.8)", "rgba(121,85,72,0.8)"],
+    fish_sauce: ["rgba(210,180,140,0.8)", "rgba(245,222,179,0.8)"],
+    black_pepper: ["rgba(85,85,85,0.8)", "rgba(153,153,153,0.8)"],
+    cinnamon: ["rgba(205,133,63,0.8)", "rgba(210,180,140,0.8)"],
+    tomato: ["rgba(192,57,43,0.8)", "rgba(255,99,71,0.8)"],
+    onion: ["rgba(243,156,18,0.7)", "rgba(255,235,59,0.7)"],
+    olive_oil: ["rgba(165,214,167,0.8)", "rgba(200,230,201,0.8)"],
+    lime: ["rgba(46,204,113,0.8)", "rgba(129,199,132,0.8)"],
+    basil: ["rgba(39,174,96,0.8)", "rgba(46,204,113,0.8)"],
+    paprika: ["rgba(230,126,34,0.8)", "rgba(243,156,18,0.8)"],
   };
   var DEFAULT_ARC_COLOR = ["rgba(142,68,173,0.7)", "rgba(175,122,197,0.7)"];
 
@@ -312,34 +348,47 @@
   }
 
   // Apply arc rendering config
-  globe
-    .arcDashLength(0.4)
-    .arcDashGap(0.2)
-    .arcDashAnimateTime(2000)
-    .arcStroke(0.5)
-    .arcColor(function (d) { return d.color; })
-    .arcsData([]);
+  if (globe)
+    globe
+      .arcDashLength(0.4)
+      .arcDashGap(0.2)
+      .arcDashAnimateTime(reducedMotion.matches ? 0 : 2000)
+      .arcStroke(0.5)
+      .arcColor(function (d) {
+        return d.color;
+      })
+      .arcsData([]);
 
   // ===========================================================
   // Helper: open a region (fly, tooltip, arcs)
   // ===========================================================
   function openRegion(region) {
     activeRegion = region;
-    globe.pointOfView({ lat: region.center[0], lng: region.center[1], altitude: 1.5 }, 1000);
+    flyTo({ lat: region.center[0], lng: region.center[1], altitude: 1.7 }, 900);
     showTooltip(region);
-    globe.arcsData(buildArcsForRegion(region));
+    if (globe) globe.arcsData(buildArcsForRegion(region));
+    document.getElementById("region-select").value = region.id;
+    caption.textContent =
+      "Exploring " +
+      region.name +
+      ". Lines connect cuisines with ingredients in common.";
+    announce("Exploring " + region.name + ", " + region.country);
   }
 
   // ===========================================================
   // F) Search bar
   // ===========================================================
   var searchInput = document.getElementById("search-input");
-  var searchDropdown = document.getElementById("search-dropdown");
+  var searchDropdown = document.getElementById("search-results");
 
   // Build search index
   var searchIndex = [];
   foodData.regions.forEach(function (region) {
-    searchIndex.push({ type: "region", label: region.name + ", " + region.country, region: region });
+    searchIndex.push({
+      type: "region",
+      label: region.name + ", " + region.country,
+      region: region,
+    });
     region.flavorBases.forEach(function (base) {
       base.ingredients.forEach(function (id) {
         var name = getIngredientName(id);
@@ -348,44 +397,73 @@
           return entry.type === "ingredient" && entry.ingredientId === id;
         });
         if (!exists) {
-          searchIndex.push({ type: "ingredient", label: name, ingredientId: id });
+          searchIndex.push({
+            type: "ingredient",
+            label: name,
+            ingredientId: id,
+          });
         }
       });
     });
   });
 
+  var visibleResults = [];
+  var activeResult = 0;
+
+  function closeSearch() {
+    searchDropdown.classList.add("hidden");
+    searchInput.setAttribute("aria-expanded", "false");
+  }
+
   function doSearch(query) {
-    if (!query) {
-      searchDropdown.classList.add("hidden");
+    if (!query.trim()) {
+      closeSearch();
       return;
     }
-    var q = query.toLowerCase();
-    var results = searchIndex.filter(function (entry) {
-      return entry.label.toLowerCase().indexOf(q) !== -1;
-    }).slice(0, 8);
-
-    if (results.length === 0) {
-      searchDropdown.classList.add("hidden");
-      return;
+    var q = query.toLowerCase().trim();
+    visibleResults = searchIndex
+      .filter(function (entry) {
+        return entry.label.toLowerCase().indexOf(q) !== -1;
+      })
+      .slice(0, 8);
+    activeResult = 0;
+    searchDropdown.replaceChildren();
+    if (!visibleResults.length) {
+      var empty = document.createElement("p");
+      empty.className = "search-empty";
+      empty.textContent =
+        "No matches yet. Try a region, country, or ingredient.";
+      searchDropdown.appendChild(empty);
     }
-
-    searchDropdown.innerHTML = "";
-    results.forEach(function (entry, i) {
-      var div = document.createElement("div");
-      div.className = "search-result" + (i === 0 ? " search-result-active" : "");
-      div.textContent = entry.label + (entry.type === "ingredient" ? " (ingredient)" : "");
-      div.addEventListener("mousedown", function (e) {
-        e.preventDefault();
+    visibleResults.forEach(function (entry, index) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className =
+        "search-result" + (index === 0 ? " search-result-active" : "");
+      var label = document.createElement("span");
+      label.textContent = entry.label;
+      var detail = document.createElement("small");
+      detail.textContent =
+        entry.type === "ingredient"
+          ? "Follow this ingredient"
+          : "Explore this cuisine";
+      button.append(label, detail);
+      button.addEventListener("pointerdown", function (event) {
+        event.preventDefault();
+      });
+      button.addEventListener("click", function () {
         selectSearchResult(entry);
       });
-      searchDropdown.appendChild(div);
+      searchDropdown.appendChild(button);
     });
     searchDropdown.classList.remove("hidden");
+    searchInput.setAttribute("aria-expanded", "true");
   }
 
   function selectSearchResult(entry) {
-    searchDropdown.classList.add("hidden");
+    closeSearch();
     searchInput.value = "";
+    lastControl = searchInput;
 
     if (entry.type === "region") {
       openRegion(entry.region);
@@ -416,12 +494,27 @@
         });
       }
     }
-    globe.arcsData(arcs);
+    if (globe) globe.arcsData(arcs);
+    document
+      .querySelectorAll(".ingredient-shortcut")
+      .forEach(function (button) {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.ingredient === ingredientId),
+        );
+      });
+    caption.textContent =
+      getIngredientName(ingredientId) +
+      " connects " +
+      regions.length +
+      " regional cuisines. Pick a marker to discover their dishes.";
+    announce(caption.textContent);
+    document.getElementById("region-select").value = "";
 
     // Fly to center of the first region
-    globe.pointOfView(
+    flyTo(
       { lat: regions[0].center[0], lng: regions[0].center[1], altitude: 2.0 },
-      1000
+      1000,
     );
   }
 
@@ -430,81 +523,169 @@
       doSearch(this.value);
     });
 
-    searchInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        var q = this.value.toLowerCase();
-        if (!q) return;
-        var match = searchIndex.find(function (entry) {
-          return entry.label.toLowerCase().indexOf(q) !== -1;
-        });
-        if (match) selectSearchResult(match);
-      } else if (e.key === "Escape") {
-        searchDropdown.classList.add("hidden");
-        searchInput.blur();
-      }
+    searchInput.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (
+          !visibleResults.length ||
+          searchDropdown.classList.contains("hidden")
+        )
+          doSearch(this.value);
+        else
+          activeResult =
+            (activeResult +
+              (event.key === "ArrowDown" ? 1 : -1) +
+              visibleResults.length) %
+            visibleResults.length;
+        searchDropdown
+          .querySelectorAll(".search-result")
+          .forEach(function (button, index) {
+            button.classList.toggle(
+              "search-result-active",
+              index === activeResult,
+            );
+            if (index === activeResult)
+              button.scrollIntoView({ block: "nearest" });
+          });
+      } else if (
+        event.key === "Enter" &&
+        visibleResults.length &&
+        !searchDropdown.classList.contains("hidden")
+      ) {
+        event.preventDefault();
+        selectSearchResult(visibleResults[activeResult]);
+      } else if (event.key === "Escape") closeSearch();
     });
-
-    searchInput.addEventListener("blur", function () {
-      setTimeout(function () {
-        searchDropdown.classList.add("hidden");
-      }, 150);
+    searchInput.addEventListener("focus", function () {
+      if (this.value) doSearch(this.value);
+    });
+    document
+      .getElementById("search-bar")
+      .addEventListener("focusout", function () {
+        setTimeout(function () {
+          if (
+            !document
+              .getElementById("search-bar")
+              .contains(document.activeElement)
+          )
+            closeSearch();
+        }, 0);
+      });
+    document.addEventListener("pointerdown", function (event) {
+      if (!document.getElementById("search-bar").contains(event.target))
+        closeSearch();
     });
   }
 
   // ===========================================================
   // G) Randomizer ("What should we cook?")
   // ===========================================================
-  var randomBtn = document.getElementById("random-btn");
+  var randomBtn = document.getElementById("randomizer-btn");
 
   function pickRandom() {
     var regions = foodData.regions;
     var region = regions[Math.floor(Math.random() * regions.length)];
-    var base = region.flavorBases[Math.floor(Math.random() * region.flavorBases.length)];
+    var base =
+      region.flavorBases[Math.floor(Math.random() * region.flavorBases.length)];
     var recipe = base.recipes[Math.floor(Math.random() * base.recipes.length)];
-
+    lastControl = randomBtn;
     activeRegion = region;
-    globe.pointOfView(
-      { lat: region.center[0], lng: region.center[1], altitude: 1.2 },
-      1500
+    flyTo({ lat: region.center[0], lng: region.center[1], altitude: 1.7 }, 900);
+    showTooltip(region, recipe);
+    if (globe) globe.arcsData(buildArcsForRegion(region));
+    document.getElementById("region-select").value = region.id;
+    caption.textContent =
+      "Tonight’s inspiration: " + recipe.name + ", from " + region.name + ".";
+    announce(caption.textContent);
+  }
+  randomBtn.addEventListener("click", pickRandom);
+
+  // Discovery controls use the same data and actions as the globe markers.
+  var regionSelect = document.getElementById("region-select");
+  foodData.regions
+    .slice()
+    .sort(function (a, b) {
+      return a.country.localeCompare(b.country) || a.name.localeCompare(b.name);
+    })
+    .forEach(function (region) {
+      var option = document.createElement("option");
+      option.value = region.id;
+      option.textContent = region.name + " · " + region.country;
+      regionSelect.appendChild(option);
+    });
+  regionSelect.addEventListener("change", function () {
+    var region = foodData.regions.find(function (entry) {
+      return entry.id === regionSelect.value;
+    });
+    if (region) {
+      lastControl = regionSelect;
+      openRegion(region);
+    }
+  });
+  ["garlic", "ginger", "cumin", "coconut_milk"].forEach(function (id) {
+    if (!ingredientIndex[id]) return;
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "ingredient-shortcut";
+    button.dataset.ingredient = id;
+    button.setAttribute("aria-pressed", "false");
+    var image = document.createElement("img");
+    image.src = renderSprite(id, 24);
+    image.alt = "";
+    image.className = "sprite-icon";
+    var label = document.createElement("span");
+    label.textContent = getIngredientName(id);
+    button.append(image, label);
+    button.addEventListener("click", function () {
+      lastControl = button;
+      highlightIngredientRegions(id);
+    });
+    document.getElementById("ingredient-shortcuts").appendChild(button);
+  });
+  var recipeCount = foodData.regions.reduce(function (total, region) {
+    return (
+      total +
+      region.flavorBases.reduce(function (count, base) {
+        return count + base.recipes.length;
+      }, 0)
     );
-
-    // Slight delay so fly animation is underway before tooltip opens
-    setTimeout(function () {
-      showTooltip(region);
-      globe.arcsData(buildArcsForRegion(region));
-
-      // Briefly highlight the chosen recipe
-      setTimeout(function () {
-        var recipeEls = tooltipEl.querySelectorAll(".recipe-item");
-        recipeEls.forEach(function (el) {
-          var nameEl = el.querySelector(".recipe-name");
-          if (nameEl && nameEl.textContent === recipe.name) {
-            el.classList.add("recipe-highlight");
-            setTimeout(function () {
-              el.classList.remove("recipe-highlight");
-            }, 2500);
-          }
-        });
-      }, 300);
-    }, 500);
-  }
-
-  if (randomBtn) {
-    randomBtn.addEventListener("click", pickRandom);
-  }
+  }, 0);
+  document.getElementById("atlas-count").textContent =
+    foodData.regions.length +
+    " regional cuisines · " +
+    recipeCount +
+    " dishes to discover";
 
   // ===========================================================
   // H) Event wiring
   // ===========================================================
 
   // Globe background click: dismiss tooltip and arcs
-  globe.onGlobeClick(function () {
+  if (globe)
+    globe.onGlobeClick(function () {
+      dismissTooltip();
+    });
+  document.getElementById("reset-map").addEventListener("click", function () {
+    lastControl = this;
     dismissTooltip();
+    flyTo({ lat: 25, lng: 40, altitude: 2.3 }, 700);
+    document.getElementById("region-select").value = "";
+    document
+      .querySelectorAll(".ingredient-shortcut")
+      .forEach(function (button) {
+        button.setAttribute("aria-pressed", "false");
+      });
+    caption.textContent = "Pick a marker to explore. Drag to turn the globe.";
+    announce("Globe view reset.");
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && !tooltipEl.classList.contains("hidden"))
+      dismissTooltip();
   });
 
   // Window resize
   window.addEventListener("resize", function () {
-    globe.width(window.innerWidth).height(window.innerHeight);
+    if (globe)
+      globe.width(mapContainer.clientWidth).height(mapContainer.clientHeight);
   });
-
 })();
